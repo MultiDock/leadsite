@@ -19,9 +19,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import ProtectedRoute from "@/components/protected-route"
-import { useAuth } from "@/hooks/use-auth"
 
 // Mock lead data
 const initialLeads = [
@@ -29,34 +29,34 @@ const initialLeads = [
     id: "1",
     type: "E-commerce",
     interest: "Kosmetyki",
+    score: 85,
     location: "Warszawa",
     date: "2024-01-20",
     email: "test1@example.com",
     phone: "123-456-789",
     price: 10,
-    addedBy: "Admin User",
   },
   {
     id: "2",
     type: "Usługi",
     interest: "Remonty",
+    score: 70,
     location: "Kraków",
     date: "2024-01-15",
     email: "test2@example.com",
     phone: "987-654-321",
     price: 15,
-    addedBy: "Admin User",
   },
   {
     id: "3",
     type: "Szkolenia",
     interest: "Programowanie",
+    score: 92,
     location: "Gdańsk",
     date: "2024-01-10",
     email: "test3@example.com",
     phone: "111-222-333",
     price: 20,
-    addedBy: "Admin User",
   },
 ]
 
@@ -64,12 +64,12 @@ interface Lead {
   id: string
   type: string
   interest: string
+  score: number
   location: string
   date: string
   email: string
   phone: string
   price: number
-  addedBy?: string
 }
 
 export default function AdminLeadsPage() {
@@ -78,9 +78,10 @@ export default function AdminLeadsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [formData, setFormData] = useState<Omit<Lead, "id" | "date" | "addedBy">>({
+  const [formData, setFormData] = useState<Omit<Lead, "id" | "date">>({
     type: "",
     interest: "",
+    score: 80,
     location: "",
     email: "",
     phone: "",
@@ -88,7 +89,6 @@ export default function AdminLeadsPage() {
   })
   const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const { user } = useAuth()
 
   const filteredLeads = leads.filter(
     (lead) =>
@@ -102,7 +102,7 @@ export default function AdminLeadsPage() {
     const { name, value } = e.target
     setFormData((prev) => ({
       ...prev,
-      [name]: name === "price" ? Number(value) : value,
+      [name]: name === "score" || name === "price" ? Number(value) : value,
     }))
   }
 
@@ -116,7 +116,6 @@ export default function AdminLeadsPage() {
         ...formData,
         id: Date.now().toString(),
         date: new Date().toISOString().split("T")[0],
-        addedBy: user?.name || "Admin",
       }
 
       setLeads((prev) => [...prev, newLead])
@@ -124,6 +123,7 @@ export default function AdminLeadsPage() {
       setFormData({
         type: "",
         interest: "",
+        score: 80,
         location: "",
         email: "",
         phone: "",
@@ -234,6 +234,18 @@ export default function AdminLeadsPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
+                    <Label htmlFor="score">Ocena (1-100)</Label>
+                    <Input
+                      id="score"
+                      name="score"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={formData.score}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="price">Cena (monety)</Label>
                     <Input
                       id="price"
@@ -313,11 +325,11 @@ export default function AdminLeadsPage() {
                 <TableRow>
                   <TableHead>Typ</TableHead>
                   <TableHead>Zainteresowanie</TableHead>
+                  <TableHead>Ocena</TableHead>
                   <TableHead>Lokalizacja</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Cena</TableHead>
                   <TableHead>Data</TableHead>
-                  <TableHead>Dodano przez</TableHead>
                   <TableHead className="text-right">Akcje</TableHead>
                 </TableRow>
               </TableHeader>
@@ -327,11 +339,13 @@ export default function AdminLeadsPage() {
                     <TableRow key={lead.id}>
                       <TableCell>{lead.type}</TableCell>
                       <TableCell>{lead.interest}</TableCell>
+                      <TableCell>
+                        <Badge variant={lead.score >= 80 ? "default" : "secondary"}>{lead.score}%</Badge>
+                      </TableCell>
                       <TableCell>{lead.location}</TableCell>
                       <TableCell>{lead.email}</TableCell>
                       <TableCell>{lead.price} monet</TableCell>
                       <TableCell>{lead.date}</TableCell>
-                      <TableCell>{lead.addedBy || "Admin"}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="icon" onClick={() => openDeleteDialog(lead)}>
                           <Trash2 className="h-4 w-4 text-destructive" />

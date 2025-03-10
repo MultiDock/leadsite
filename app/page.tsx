@@ -13,6 +13,7 @@ import {
   ShoppingCart,
   Users,
 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -21,20 +22,18 @@ import { PurchaseLeadButton } from "@/components/purchase-lead-button"
 import ProtectedRoute from "@/components/protected-route"
 import { useAuth } from "@/contexts/auth-context"
 import Link from "next/link"
-import { NewTag } from "@/components/new-tag"
-import { AccountMenu } from "@/components/account-menu"
 
 // Define the Lead interface
 interface Lead {
   id: string
   type: string
   interest: string
+  score: number
   location: string
   date: string
   email: string
   phone: string
   price: number
-  addedBy?: string
 }
 
 // Mock lead data
@@ -125,7 +124,7 @@ export default function Dashboard() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[240px] sm:w-[280px]">
-              <nav className="flex flex-col gap-2 text-sm h-full">
+              <nav className="grid gap-2 text-sm">
                 <Button variant="ghost" className="justify-start gap-2">
                   <Home className="h-4 w-4" />
                   Pulpit
@@ -154,19 +153,17 @@ export default function Dashboard() {
                   <Settings className="h-4 w-4" />
                   Ustawienia
                 </Button>
-                <div className="mt-auto">
-                  {user?.role === "admin" && (
-                    <Link href="/admin/leads">
-                      <Button variant="ghost" className="justify-start gap-2 w-full">
-                        <Package className="h-4 w-4" />
-                        Zarządzaj Leadami
-                      </Button>
-                    </Link>
-                  )}
-                  <div className="mt-2 border-t pt-2">
-                    <AccountMenu />
-                  </div>
-                </div>
+                {user?.role === "admin" && (
+                  <Link href="/admin/leads">
+                    <Button variant="ghost" className="justify-start gap-2 w-full">
+                      <Package className="h-4 w-4" />
+                      Zarządzaj Leadami
+                    </Button>
+                  </Link>
+                )}
+                <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={logout}>
+                  Wyloguj się
+                </Button>
               </nav>
             </SheetContent>
           </Sheet>
@@ -185,7 +182,7 @@ export default function Dashboard() {
                 <span className="font-semibold">LeadMarket</span>
               </div>
             </div>
-            <nav className="grid gap-2 p-4 text-sm flex-1">
+            <nav className="grid gap-2 p-4 text-sm">
               <Button variant="ghost" className="justify-start gap-2">
                 <Home className="h-4 w-4" />
                 Pulpit
@@ -214,20 +211,17 @@ export default function Dashboard() {
                 <Settings className="h-4 w-4" />
                 Ustawienia
               </Button>
-
-              <div className="mt-auto">
-                {user?.role === "admin" && (
-                  <Link href="/admin/leads">
-                    <Button variant="ghost" className="justify-start gap-2 w-full">
-                      <Package className="h-4 w-4" />
-                      Zarządzaj Leadami
-                    </Button>
-                  </Link>
-                )}
-                <div className="mt-2 border-t pt-2">
-                  <AccountMenu />
-                </div>
-              </div>
+              {user?.role === "admin" && (
+                <Link href="/admin/leads">
+                  <Button variant="ghost" className="justify-start gap-2 w-full">
+                    <Package className="h-4 w-4" />
+                    Zarządzaj Leadami
+                  </Button>
+                </Link>
+              )}
+              <Button variant="ghost" className="justify-start gap-2 text-destructive" onClick={logout}>
+                Wyloguj się
+              </Button>
             </nav>
           </aside>
 
@@ -257,11 +251,9 @@ export default function Dashboard() {
                     <CardTitle className="text-sm font-medium">Dostępne Leady</CardTitle>
                     <Package className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
-                  <CardContent className="pt-2">
-                    <div className="text-2xl font-bold">{leads.length}</div>
-                    <p className="text-xs text-muted-foreground">
-                      +{Math.floor(leads.length * 0.15)} od zeszłego tygodnia
-                    </p>
+                  <CardContent>
+                    <div className="text-2xl font-bold">1,245</div>
+                    <p className="text-xs text-muted-foreground">+180 od zeszłego tygodnia</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -269,7 +261,7 @@ export default function Dashboard() {
                     <CardTitle className="text-sm font-medium">Zakupione Leady</CardTitle>
                     <ShoppingCart className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
-                  <CardContent className="pt-2">
+                  <CardContent>
                     <div className="text-2xl font-bold">324</div>
                     <p className="text-xs text-muted-foreground">+56 od zeszłego tygodnia</p>
                   </CardContent>
@@ -279,7 +271,7 @@ export default function Dashboard() {
                     <CardTitle className="text-sm font-medium">Współczynnik Konwersji</CardTitle>
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
-                  <CardContent className="pt-2">
+                  <CardContent>
                     <div className="text-2xl font-bold">24.5%</div>
                     <p className="text-xs text-muted-foreground">+2.3% od zeszłego miesiąca</p>
                   </CardContent>
@@ -289,7 +281,7 @@ export default function Dashboard() {
                     <CardTitle className="text-sm font-medium">Pozostałe Monety</CardTitle>
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
-                  <CardContent className="pt-2">
+                  <CardContent>
                     <div className="text-2xl font-bold">{user?.coins || 0}</div>
                     <Button size="sm" className="mt-2 w-full">
                       <PlusCircle className="mr-2 h-4 w-4" />
@@ -314,9 +306,9 @@ export default function Dashboard() {
                       {leads.map((lead) => (
                         <Card key={lead.id} className="overflow-hidden">
                           <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between relative">
+                            <div className="flex items-center justify-between">
                               <CardTitle className="text-base">{lead.type}</CardTitle>
-                              <NewTag date={lead.date} />
+                              <Badge variant="secondary">{lead.score}%</Badge>
                             </div>
                             <CardDescription>{lead.interest}</CardDescription>
                           </CardHeader>

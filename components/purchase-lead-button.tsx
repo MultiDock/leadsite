@@ -7,7 +7,7 @@ import { purchaseLead } from "@/lib/api"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
 
-export interface PurchaseLeadButtonProps {
+interface PurchaseLeadButtonProps {
   leadId: string
   price: number
   onSuccess?: () => void
@@ -15,7 +15,7 @@ export interface PurchaseLeadButtonProps {
 
 export function PurchaseLeadButton({ leadId, price, onSuccess }: PurchaseLeadButtonProps) {
   const [loading, setLoading] = useState(false)
-  const { user, purchaseLead: authPurchaseLead } = useAuth()
+  const { user } = useAuth()
 
   const handlePurchase = async () => {
     if (!user) {
@@ -38,21 +38,6 @@ export function PurchaseLeadButton({ leadId, price, onSuccess }: PurchaseLeadBut
       const result = await purchaseLead(leadId)
 
       if (result.success) {
-        // If we have the purchaseLead function in auth context, use it
-        if (authPurchaseLead) {
-          await authPurchaseLead({
-            id: leadId,
-            price,
-            // Add other required fields with placeholder values
-            type: "",
-            interest: "",
-            location: "",
-            date: new Date().toISOString().split("T")[0],
-            email: "",
-            phone: "",
-          })
-        }
-
         toast.success("Lead zakupiony pomyślnie", {
           description: "Możesz teraz zobaczyć szczegóły w zakładce Zakupione Leady",
         })
