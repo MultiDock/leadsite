@@ -123,11 +123,11 @@ export default function AdminLeadsPage() {
       setFormData({
         type: "",
         interest: "",
-        score: 80,
+        score: 0,
         location: "",
         email: "",
         phone: "",
-        price: 10,
+        price: 80,
       })
 
       toast.success("Lead dodany pomyślnie", {

@@ -71,6 +71,17 @@ const mockLeads: Lead[] = [
     phone: "111-222-333",
     price: 20,
   },
+  {
+    id: "4",
+    type: "Szkolenia",
+    interest: "Programowanie",
+    score: 92,
+    location: "Gdańsk",
+    date: "2024-01-10",
+    email: "test3@example.com",
+    phone: "111-222-333",
+    price: 20,
+  },
 ]
 
 // Mock fetchLeads function
