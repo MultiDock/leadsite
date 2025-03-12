@@ -21,86 +21,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PurchaseLeadButton } from "@/components/purchase-lead-button"
 import ProtectedRoute from "@/components/protected-route"
 import { useAuth } from "@/contexts/auth-context"
+import { fetchAvailableLeads } from "@/lib/leads-api"
+import { NewTag } from "@/components/new-tag"
 import Link from "next/link"
-
-// Define the Lead interface
-interface Lead {
-  id: string
-  type: string
-  interest: string
-  score: number
-  location: string
-  date: string
-  email: string
-  phone: string
-  price: number
-}
-
-// Mock lead data
-const mockLeads: Lead[] = [
-  {
-    id: "1",
-    type: "E-commerce",
-    interest: "Kosmetyki",
-    score: 85,
-    location: "Warszawa",
-    date: "2024-01-20",
-    email: "test1@example.com",
-    phone: "123-456-789",
-    price: 10,
-  },
-  {
-    id: "2",
-    type: "Usługi",
-    interest: "Remonty",
-    score: 70,
-    location: "Kraków",
-    date: "2024-01-15",
-    email: "test2@example.com",
-    phone: "987-654-321",
-    price: 15,
-  },
-  {
-    id: "3",
-    type: "Szkolenia",
-    interest: "Programowanie",
-    score: 92,
-    location: "Gdańsk",
-    date: "2024-01-10",
-    email: "test3@example.com",
-    phone: "111-222-333",
-    price: 20,
-  },
-  {
-    id: "4",
-    type: "Szkolenia",
-    interest: "Programowanie",
-    score: 92,
-    location: "Gdańsk",
-    date: "2024-01-10",
-    email: "test3@example.com",
-    phone: "111-222-333",
-    price: 20,
-  },
-]
-
-// Mock fetchLeads function
-const fetchLeads = async (): Promise<Lead[]> => {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 1000))
-  return mockLeads
-}
+import type { Lead } from "@/types/lead"
 
 export default function Dashboard() {
   const [expandedLeads, setExpandedLeads] = useState<Record<string, boolean>>({})
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const { user, logout } = useAuth()
+  const [activeTab, setActiveTab] = useState("marketplace")
 
   useEffect(() => {
     async function loadLeads() {
       try {
-        const data = await fetchLeads()
+        setLoading(true)
+        const data = await fetchAvailableLeads()
         setLeads(data)
       } catch (error) {
         console.error("Failed to load leads:", error)
@@ -122,6 +59,86 @@ export default function Dashboard() {
     })
   }
 
+  // Check if a lead is new (less than 24 hours old)
+  const isNewLead = (date: string) => {
+    const leadDate = new Date(date)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - leadDate.getTime())
+    const diffHours = diffTime / (1000 * 60 * 60)
+    return diffHours < 24
+  }
+
+  // Function to render a lead card
+  const renderLeadCard = (lead: Lead, isPurchased = false) => (
+    <Card key={lead.id} className="overflow-hidden">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">{lead.type}</CardTitle>
+            {!isPurchased && isNewLead(lead.date) && <NewTag />}
+          </div>
+          <Badge variant={lead.score >= 80 ? "default" : "secondary"}>{lead.score}%</Badge>
+        </div>
+        <CardDescription>{lead.interest}</CardDescription>
+      </CardHeader>
+      <CardContent className="pb-2">
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">Lokalizacja:</span>
+          <span>{lead.location}</span>
+        </div>
+        <div className="mt-1 flex justify-between text-sm">
+          <span className="text-muted-foreground">Dodano:</span>
+          <span>{lead.date}</span>
+        </div>
+
+        {/* Always show contact details for purchased leads */}
+        {(expandedLeads[lead.id] || isPurchased) && (
+          <div className="mt-3 space-y-2 rounded-md bg-muted p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="font-medium">Email:</span>
+              <span>{lead.email}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium">Telefon:</span>
+              <span>{lead.phone}</span>
+            </div>
+            {isPurchased && lead.order_number && (
+              <div className="flex justify-between">
+                <span className="font-medium">Nr zamówienia:</span>
+                <span>{lead.order_number}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="flex justify-between pt-2">
+        {!isPurchased ? (
+          <>
+            <Button variant="outline" size="sm" onClick={() => toggleLead(lead.id)}>
+              {expandedLeads[lead.id] ? "Ukryj Szczegóły" : "Pokaż Szczegóły"}
+            </Button>
+            <PurchaseLeadButton
+              leadId={lead.id}
+              price={lead.price}
+              lead={lead}
+              onSuccess={() => {
+                // Remove the lead from the available leads
+                setLeads(leads.filter((l) => l.id !== lead.id))
+                // Switch to purchased tab after successful purchase
+                setActiveTab("purchased")
+              }}
+            />
+          </>
+        ) : (
+          <Button variant="outline" size="sm" className="w-full">
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            Zakupiono za {lead.price} monet
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
+  )
+
   return (
     <ProtectedRoute>
       <div className="flex min-h-screen w-full flex-col bg-muted/40">
@@ -136,10 +153,12 @@ export default function Dashboard() {
             </SheetTrigger>
             <SheetContent side="left" className="w-[240px] sm:w-[280px]">
               <nav className="grid gap-2 text-sm">
+              <Link href="/">
                 <Button variant="ghost" className="justify-start gap-2">
                   <Home className="h-4 w-4" />
                   Pulpit
                 </Button>
+              </Link>
                 <Button variant="ghost" className="justify-start gap-2">
                   <Package className="h-4 w-4" />
                   Leady
@@ -247,7 +266,9 @@ export default function Dashboard() {
                   <DollarSign className="h-4 w-4 text-yellow-500" />
                   <span className="font-medium">{user?.coins || 0} monet</span>
                 </div>
-                <Button size="sm">Kup Monety</Button>
+                <Link href="/buy-coins">
+                  <Button size="sm">Kup Monety</Button>
+                </Link>
               </div>
             </div>
 
@@ -263,8 +284,8 @@ export default function Dashboard() {
                     <Package className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">1,245</div>
-                    <p className="text-xs text-muted-foreground">+180 od zeszłego tygodnia</p>
+                    <div className="text-2xl font-bold">{leads.length}</div>
+                    <p className="text-xs text-muted-foreground">Aktualizowane na bieżąco</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -273,8 +294,12 @@ export default function Dashboard() {
                     <ShoppingCart className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">324</div>
-                    <p className="text-xs text-muted-foreground">+56 od zeszłego tygodnia</p>
+                    <div className="text-2xl font-bold">{user?.purchasedLeads?.length || 0}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {user?.purchasedLeads?.length && user.purchasedLeads.length > 0
+                        ? `Ostatni zakup: ${user.purchasedLeads[0].date}`
+                        : "Brak zakupionych leadów"}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -284,7 +309,7 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">24.5%</div>
-                    <p className="text-xs text-muted-foreground">+2.3% od zeszłego miesiąca</p>
+                    <p className="text-xs text-muted-foreground">Średnia dla wszystkich leadów</p>
                   </CardContent>
                 </Card>
                 <Card>
@@ -294,81 +319,57 @@ export default function Dashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{user?.coins || 0}</div>
-                    <Button size="sm" className="mt-2 w-full">
-                      <PlusCircle className="mr-2 h-4 w-4" />
-                      Kup Więcej
-                    </Button>
+                    <Link href="/buy-coins">
+                      <Button size="sm" className="mt-2 w-full">
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Kup Więcej
+                      </Button>
+                    </Link>
                   </CardContent>
                 </Card>
               </div>
 
-              <Tabs defaultValue="marketplace" className="space-y-4">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="marketplace">Giełda Leadów</TabsTrigger>
-                  <TabsTrigger value="purchased">Zakupione Leady</TabsTrigger>
+                  <TabsTrigger value="purchased">
+                    Zakupione Leady
+                    {user?.purchasedLeads?.length ? (
+                      <Badge variant="secondary" className="ml-2">
+                        {user.purchasedLeads.length}
+                      </Badge>
+                    ) : null}
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="marketplace" className="space-y-4">
                   {loading ? (
                     <div className="flex justify-center p-8">
                       <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
                     </div>
-                  ) : (
+                  ) : leads.length > 0 ? (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                      {leads.map((lead) => (
-                        <Card key={lead.id} className="overflow-hidden">
-                          <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                              <CardTitle className="text-base">{lead.type}</CardTitle>
-                              <Badge variant="secondary">{lead.score}%</Badge>
-                            </div>
-                            <CardDescription>{lead.interest}</CardDescription>
-                          </CardHeader>
-                          <CardContent className="pb-2">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">Lokalizacja:</span>
-                              <span>{lead.location}</span>
-                            </div>
-                            <div className="mt-1 flex justify-between text-sm">
-                              <span className="text-muted-foreground">Dodano:</span>
-                              <span>{lead.date}</span>
-                            </div>
-
-                            {expandedLeads[lead.id] && (
-                              <div className="mt-3 space-y-2 rounded-md bg-muted p-3 text-sm">
-                                <div className="flex justify-between">
-                                  <span className="font-medium">Email:</span>
-                                  <span>{lead.email}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="font-medium">Telefon:</span>
-                                  <span>{lead.phone}</span>
-                                </div>
-                              </div>
-                            )}
-                          </CardContent>
-                          <CardFooter className="flex justify-between pt-2">
-                            <Button variant="outline" size="sm" onClick={() => toggleLead(lead.id)}>
-                              {expandedLeads[lead.id] ? "Ukryj Szczegóły" : "Pokaż Szczegóły"}
-                            </Button>
-                            <PurchaseLeadButton
-                              leadId={lead.id}
-                              price={lead.price}
-                              onSuccess={() => {
-                                // Handle successful purchase, maybe refresh the leads list
-                              }}
-                            />
-                          </CardFooter>
-                        </Card>
-                      ))}
+                      {leads.map((lead) => renderLeadCard(lead))}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border bg-card p-8 text-center text-muted-foreground">
+                      <Package className="mx-auto h-8 w-8 opacity-50" />
+                      <h3 className="mt-3 text-lg font-medium">Brak dostępnych leadów</h3>
+                      <p className="mt-1">Sprawdź ponownie później lub skontaktuj się z administratorem.</p>
                     </div>
                   )}
                 </TabsContent>
                 <TabsContent value="purchased">
-                  <div className="rounded-md border bg-card p-8 text-center text-muted-foreground">
-                    <Package className="mx-auto h-8 w-8 opacity-50" />
-                    <h3 className="mt-3 text-lg font-medium">Brak zakupionych leadów</h3>
-                    <p className="mt-1">Kup leady z giełdy, aby zobaczyć je tutaj.</p>
-                  </div>
+                  {user?.purchasedLeads?.length ? (
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {user.purchasedLeads.map((lead) => renderLeadCard(lead, true))}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border bg-card p-8 text-center text-muted-foreground">
+                      <Package className="mx-auto h-8 w-8 opacity-50" />
+                      <h3 className="mt-3 text-lg font-medium">Brak zakupionych leadów</h3>
+                      <p className="mt-1">Kup leady z giełdy, aby zobaczyć je tutaj.</p>
+                    </div>
+                  )}
                 </TabsContent>
               </Tabs>
             </div>

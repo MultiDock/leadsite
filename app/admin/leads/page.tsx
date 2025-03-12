@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Search, Trash2, ChevronLeft, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -22,63 +22,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import ProtectedRoute from "@/components/protected-route"
-
-// Mock lead data
-const initialLeads = [
-  {
-    id: "1",
-    type: "E-commerce",
-    interest: "Kosmetyki",
-    score: 85,
-    location: "Warszawa",
-    date: "2024-01-20",
-    email: "test1@example.com",
-    phone: "123-456-789",
-    price: 10,
-  },
-  {
-    id: "2",
-    type: "Usługi",
-    interest: "Remonty",
-    score: 70,
-    location: "Kraków",
-    date: "2024-01-15",
-    email: "test2@example.com",
-    phone: "987-654-321",
-    price: 15,
-  },
-  {
-    id: "3",
-    type: "Szkolenia",
-    interest: "Programowanie",
-    score: 92,
-    location: "Gdańsk",
-    date: "2024-01-10",
-    email: "test3@example.com",
-    phone: "111-222-333",
-    price: 20,
-  },
-]
-
-interface Lead {
-  id: string
-  type: string
-  interest: string
-  score: number
-  location: string
-  date: string
-  email: string
-  phone: string
-  price: number
-}
+import { addLead, deleteLead } from "@/lib/leads-api"
+import { supabase } from "@/lib/supabase"
+import type { Lead } from "@/types/lead"
 
 export default function AdminLeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>(initialLeads)
+  const [leads, setLeads] = useState<Lead[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [formData, setFormData] = useState<Omit<Lead, "id" | "date">>({
+  const [formData, setFormData] = useState<Omit<Lead, "id" | "date" | "status">>({
     type: "",
     interest: "",
     score: 80,
@@ -88,7 +42,47 @@ export default function AdminLeadsPage() {
     price: 10,
   })
   const [loading, setLoading] = useState(false)
+  const [fetchingLeads, setFetchingLeads] = useState(true)
   const router = useRouter()
+
+  // Fetch all leads (including sold ones) for admin
+  useEffect(() => {
+    const fetchLeads = async () => {
+      try {
+        setFetchingLeads(true)
+        const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: false })
+
+        if (error) throw error
+
+        const formattedLeads = data.map((lead) => ({
+          ...lead,
+          date: new Date(lead.created_at).toISOString().split("T")[0],
+        }))
+
+        setLeads(formattedLeads)
+      } catch (error) {
+        console.error("Error fetching leads:", error)
+        toast.error("Nie udało się załadować leadów")
+      } finally {
+        setFetchingLeads(false)
+      }
+    }
+
+    fetchLeads()
+
+    // Set up real-time subscription for leads table
+    const subscription = supabase
+      .channel("leads-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, (payload) => {
+        // Refresh leads when there's a change
+        fetchLeads()
+      })
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const filteredLeads = leads.filter(
     (lead) =>
@@ -109,25 +103,21 @@ export default function AdminLeadsPage() {
   const handleAddLead = async () => {
     setLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const newLead = await addLead(formData)
 
-      const newLead = {
-        ...formData,
-        id: Date.now().toString(),
-        date: new Date().toISOString().split("T")[0],
+      if (!newLead) {
+        throw new Error("Failed to add lead")
       }
 
-      setLeads((prev) => [...prev, newLead])
       setIsAddDialogOpen(false)
       setFormData({
         type: "",
         interest: "",
-        score: 0,
+        score: 80,
         location: "",
         email: "",
         phone: "",
-        price: 80,
+        price: 10,
       })
 
       toast.success("Lead dodany pomyślnie", {
@@ -148,10 +138,12 @@ export default function AdminLeadsPage() {
 
     setLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const success = await deleteLead(selectedLead.id)
 
-      setLeads((prev) => prev.filter((lead) => lead.id !== selectedLead.id))
+      if (!success) {
+        throw new Error("Failed to delete lead")
+      }
+
       setIsDeleteDialogOpen(false)
       setSelectedLead(null)
 
@@ -320,48 +312,65 @@ export default function AdminLeadsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Typ</TableHead>
-                  <TableHead>Zainteresowanie</TableHead>
-                  <TableHead>Ocena</TableHead>
-                  <TableHead>Lokalizacja</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Cena</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Akcje</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredLeads.length > 0 ? (
-                  filteredLeads.map((lead) => (
-                    <TableRow key={lead.id}>
-                      <TableCell>{lead.type}</TableCell>
-                      <TableCell>{lead.interest}</TableCell>
-                      <TableCell>
-                        <Badge variant={lead.score >= 80 ? "default" : "secondary"}>{lead.score}%</Badge>
-                      </TableCell>
-                      <TableCell>{lead.location}</TableCell>
-                      <TableCell>{lead.email}</TableCell>
-                      <TableCell>{lead.price} monet</TableCell>
-                      <TableCell>{lead.date}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => openDeleteDialog(lead)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+            {fetchingLeads ? (
+              <div className="flex justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Typ</TableHead>
+                    <TableHead>Zainteresowanie</TableHead>
+                    <TableHead>Ocena</TableHead>
+                    <TableHead>Lokalizacja</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Cena</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Akcje</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLeads.length > 0 ? (
+                    filteredLeads.map((lead) => (
+                      <TableRow key={lead.id}>
+                        <TableCell>{lead.type}</TableCell>
+                        <TableCell>{lead.interest}</TableCell>
+                        <TableCell>
+                          <Badge variant={lead.score >= 80 ? "default" : "secondary"}>{lead.score}%</Badge>
+                        </TableCell>
+                        <TableCell>{lead.location}</TableCell>
+                        <TableCell>{lead.email}</TableCell>
+                        <TableCell>{lead.price} monet</TableCell>
+                        <TableCell>
+                          <Badge variant={lead.status === "available" ? "default" : "secondary"}>
+                            {lead.status === "available" ? "Dostępny" : "Sprzedany"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{lead.date}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openDeleteDialog(lead)}
+                            disabled={lead.status === "sold"}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={9} className="h-24 text-center">
+                        Nie znaleziono leadów.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      Nie znaleziono leadów.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 

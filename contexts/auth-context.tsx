@@ -3,33 +3,24 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
+import type { Lead } from "@/types/lead"
+import { purchaseLead as purchaseLeadApi } from "@/lib/leads-api"
 
-type Lead = {
-  id: string
-  type: string
-  interest: string
-  location: string
-  date: string
-  email: string
-  phone: string
-  price: number
-  addedBy?: string
-}
-
-type User = {
+type UserProfile = {
   id: string
   name: string
   email: string
   role: "user" | "admin"
   coins: number
-  purchasedLeads: Lead[]
-} | null
+  purchasedLeads?: Lead[]
+}
 
 interface AuthContextType {
-  user: User
+  user: UserProfile | null
   login: (email: string, password: string) => Promise<boolean>
   register: (name: string, email: string, password: string) => Promise<boolean>
-  logout: () => void
+  logout: () => Promise<void>
   loading: boolean
   purchaseLead: (lead: Lead) => Promise<boolean>
 }
@@ -37,74 +28,139 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User>(null)
+  const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
+  // Fetch user profile data
+  const fetchUserProfile = async (userId: string): Promise<UserProfile | null> => {
+    try {
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+
+      if (error) throw error
+
+      // Fetch purchased leads
+      const { data: purchasesData, error: purchasesError } = await supabase
+        .from("purchases")
+        .select(`
+          id,
+          order_number,
+          price,
+          created_at,
+          lead_id,
+          leads:leads(*)
+        `)
+        .eq("user_id", userId)
+
+      if (purchasesError) throw purchasesError
+
+      // Format purchased leads
+      const formattedLeads: Lead[] = []
+
+      if (purchasesData) {
+        for (const purchase of purchasesData) {
+          if (purchase.leads) {
+            // If leads is an array, take the first item
+            const leadData = Array.isArray(purchase.leads) ? purchase.leads[0] : purchase.leads;
+            
+            formattedLeads.push({
+              ...leadData,
+              order_number: purchase.order_number,
+              date: new Date(purchase.created_at).toISOString().split("T")[0],
+            });
+          }
+        }
+      }
+
+      return {
+        id: data.id,
+        name: data.name,
+        email: data.email || "",
+        role: data.role,
+        coins: data.coins,
+        purchasedLeads: formattedLeads,
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error)
+      return null
+    }
+  }
+
   // Check if user is logged in on initial load
   useEffect(() => {
-    // Only run this in the browser
-    if (typeof window !== "undefined") {
+    const initAuth = async () => {
       try {
-        const storedUser = localStorage.getItem("user")
-        if (storedUser) {
-          setUser(JSON.parse(storedUser))
+        // Get current session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (session?.user) {
+          const profile = await fetchUserProfile(session.user.id)
+          if (profile) {
+            setUser({
+              ...profile,
+              email: session.user.email || "",
+            })
+          }
         }
       } catch (error) {
-        console.error("Failed to parse stored user:", error)
-        localStorage.removeItem("user")
+        console.error("Error initializing auth:", error)
+      } finally {
+        setLoading(false)
       }
     }
-    setLoading(false)
+
+    initAuth()
+
+    // Set up auth state change listener
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        const profile = await fetchUserProfile(session.user.id)
+        if (profile) {
+          setUser({
+            ...profile,
+            email: session.user.email || "",
+          })
+        }
+      } else if (event === "SIGNED_OUT") {
+        setUser(null)
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [])
 
-  // Mock login function - replace with actual API call
+  // Login function
   const login = async (email: string, password: string): Promise<boolean> => {
     setLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      // Mock authentication - in a real app, validate credentials with backend
-      if (email === "admin@example.com" && password === "password") {
-        const userData = {
-          id: "1",
-          name: "Admin User",
-          email: "admin@example.com",
-          role: "admin" as const,
-          coins: 5000,
-          purchasedLeads: [],
-        }
-        setUser(userData)
-
-        // Only set localStorage in the browser
-        if (typeof window !== "undefined") {
-          localStorage.setItem("user", JSON.stringify(userData))
-        }
-
-        toast.success("Zalogowano pomyślnie")
-        return true
-      } else if (email === "user@example.com" && password === "password") {
-        const userData = {
-          id: "2",
-          name: "Regular User",
-          email: "user@example.com",
-          role: "user" as const,
-          coins: 1250,
-          purchasedLeads: [],
-        }
-        setUser(userData)
-
-        // Only set localStorage in the browser
-        if (typeof window !== "undefined") {
-          localStorage.setItem("user", JSON.stringify(userData))
-        }
-
-        toast.success("Zalogowano pomyślnie")
-        return true
+      if (error) {
+        toast.error(error.message)
+        return false
       }
 
-      toast.error("Nieprawidłowy email lub hasło")
+      if (data.user) {
+        const profile = await fetchUserProfile(data.user.id)
+        if (profile) {
+          setUser({
+            ...profile,
+            email: data.user.email || "",
+          })
+          toast.success("Zalogowano pomyślnie")
+          return true
+        }
+      }
+
       return false
     } catch (error) {
       console.error("Login failed:", error)
@@ -115,26 +171,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Mock register function - replace with actual API call
+  // Register function
   const register = async (name: string, email: string, password: string): Promise<boolean> => {
-    setLoading(true)
+    setLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // In a real app, send registration data to backend
-      toast.success("Rejestracja zakończona pomyślnie")
-      return true
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+          },
+        },
+      });
+  
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+  
+      toast.success("Registration successful! Please check your email for confirmation.");
+      return true;
     } catch (error) {
-      console.error("Registration failed:", error)
-      toast.error("Wystąpił błąd podczas rejestracji")
-      return false
+      console.error("Registration failed:", error);
+      toast.error("Registration failed. Please try again.");
+      return false;
     } finally {
-      setLoading(false)
+      setLoading(false);
+    }
+  };
+
+  // Logout function
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut()
+      setUser(null)
+      router.push("/login")
+      toast.info("Wylogowano pomyślnie")
+    } catch (error) {
+      console.error("Logout failed:", error)
+      toast.error("Wystąpił błąd podczas wylogowywania")
     }
   }
 
-  // Function to purchase a lead
+  // Purchase lead function
   const purchaseLead = async (lead: Lead): Promise<boolean> => {
     if (!user) return false
 
@@ -146,22 +226,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false
     }
 
+    setLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const result = await purchaseLeadApi(lead.id, user.id, lead.price)
 
-      // Update user data with purchased lead and reduced coins
-      const updatedUser = {
-        ...user,
-        coins: user.coins - lead.price,
-        purchasedLeads: [...user.purchasedLeads, lead],
+      if (!result.success) {
+        throw new Error("Failed to purchase lead")
       }
 
-      setUser(updatedUser)
-
-      // Update localStorage
-      if (typeof window !== "undefined") {
-        localStorage.setItem("user", JSON.stringify(updatedUser))
+      // Refresh user profile to get updated coins and purchased leads
+      const updatedProfile = await fetchUserProfile(user.id)
+      if (updatedProfile) {
+        setUser(updatedProfile)
       }
 
       toast.success("Lead zakupiony pomyślnie", {
@@ -173,19 +249,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Failed to purchase lead:", error)
       toast.error("Wystąpił błąd podczas zakupu leada")
       return false
+    } finally {
+      setLoading(false)
     }
-  }
-
-  const logout = () => {
-    setUser(null)
-
-    // Only access localStorage in the browser
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("user")
-    }
-
-    router.push("/login")
-    toast.info("Wylogowano pomyślnie")
   }
 
   return (
