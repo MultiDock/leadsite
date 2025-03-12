@@ -1,28 +1,35 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { useEffect, useState } from "react"
+import { motion, useCycle } from "framer-motion"
+import { useEffect } from "react"
 
 export interface NewTagProps {
   className?: string
 }
 
 export function NewTag({ className }: NewTagProps) {
-  const [bounce, setBounce] = useState(false)
+  const [bounce, cycleBounce] = useCycle(0, -4)
 
-  // Create a bouncing effect
+  // Animate the bounce smoothly every 1.5s
   useEffect(() => {
     const interval = setInterval(() => {
-      setBounce((prev) => !prev)
-    }, 2000)
+      cycleBounce()
+    }, 1500)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [cycleBounce])
 
   return (
-    <Badge className={`bg-red-500 text-white transition-transform ${bounce ? "translate-y-[-2px]" : ""} ${className}`}>
-      Nowy
-    </Badge>
+    <motion.div
+      animate={{ y: bounce }}
+      transition={{ type: "spring", stiffness: 150, damping: 10 }}
+    >
+      <Badge
+        className={`bg-red-200 text-red-800 font-medium rounded-md px-2 py-1 text-xs ${className}`}
+      >
+        Nowy
+      </Badge>
+    </motion.div>
   )
 }
-

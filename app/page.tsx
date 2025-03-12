@@ -118,16 +118,17 @@ export default function Dashboard() {
               {expandedLeads[lead.id] ? "Ukryj Szczegóły" : "Pokaż Szczegóły"}
             </Button>
             <PurchaseLeadButton
-              leadId={lead.id}
-              price={lead.price}
-              lead={lead}
-              onSuccess={() => {
-                // Remove the lead from the available leads
-                setLeads(leads.filter((l) => l.id !== lead.id))
-                // Switch to purchased tab after successful purchase
-                setActiveTab("purchased")
-              }}
-            />
+  leadId={lead.id}
+  price={lead.price}
+  lead={lead}
+  onSuccess={() => {
+    // Remove the lead from the available leads list
+    setLeads(prevLeads => prevLeads.filter(l => l.id !== lead.id));
+    
+    // Switch to purchased tab after successful purchase
+    setActiveTab("purchased");
+  }}
+/>
           </>
         ) : (
           <Button variant="outline" size="sm" className="w-full">

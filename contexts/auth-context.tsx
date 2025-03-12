@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import type { Lead } from "@/types/lead"
-import { purchaseLead as purchaseLeadApi } from "@/lib/leads-api"
+import { purchaseLead as purchaseLeadApi, fetchPurchasedLeads } from "@/lib/leads-api"
 
 type UserProfile = {
   id: string
@@ -23,6 +23,8 @@ interface AuthContextType {
   logout: () => Promise<void>
   loading: boolean
   purchaseLead: (lead: Lead) => Promise<boolean>
+  updateUser: (updatedUser: UserProfile) => void
+  refreshPurchasedLeads: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -40,37 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error
 
       // Fetch purchased leads
-      const { data: purchasesData, error: purchasesError } = await supabase
-        .from("purchases")
-        .select(`
-          id,
-          order_number,
-          price,
-          created_at,
-          lead_id,
-          leads:leads(*)
-        `)
-        .eq("user_id", userId)
-
-      if (purchasesError) throw purchasesError
-
-      // Format purchased leads
-      const formattedLeads: Lead[] = []
-
-      if (purchasesData) {
-        for (const purchase of purchasesData) {
-          if (purchase.leads) {
-            // If leads is an array, take the first item
-            const leadData = Array.isArray(purchase.leads) ? purchase.leads[0] : purchase.leads;
-            
-            formattedLeads.push({
-              ...leadData,
-              order_number: purchase.order_number,
-              date: new Date(purchase.created_at).toISOString().split("T")[0],
-            });
-          }
-        }
-      }
+      const purchasedLeads = await fetchPurchasedLeads(userId)
 
       return {
         id: data.id,
@@ -78,12 +50,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.email || "",
         role: data.role,
         coins: data.coins,
-        purchasedLeads: formattedLeads,
+        purchasedLeads: purchasedLeads,
       }
     } catch (error) {
       console.error("Error fetching user profile:", error)
       return null
     }
+  }
+
+  // Refresh purchased leads
+  const refreshPurchasedLeads = async () => {
+    if (!user) return
+    
+    try {
+      const purchasedLeads = await fetchPurchasedLeads(user.id)
+      setUser(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          purchasedLeads
+        }
+      })
+    } catch (error) {
+      console.error("Error refreshing purchased leads:", error)
+    }
+  }
+
+  // Update user function
+  const updateUser = (updatedUser: UserProfile) => {
+    setUser(updatedUser)
   }
 
   // Check if user is logged in on initial load
@@ -215,47 +210,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // Purchase lead function
-  const purchaseLead = async (lead: Lead): Promise<boolean> => {
-    if (!user) return false
+  // In your purchaseLead function in AuthProvider
+// In your AuthProvider component
+const purchaseLead = async (lead: Lead): Promise<boolean> => {
+  if (!user) return false;
 
-    // Check if user has enough coins
-    if (user.coins < lead.price) {
-      toast.error("Niewystarczająca liczba monet", {
-        description: "Doładuj swoje konto, aby kupić ten lead",
-      })
-      return false
-    }
-
-    setLoading(true)
-    try {
-      const result = await purchaseLeadApi(lead.id, user.id, lead.price)
-
-      if (!result.success) {
-        throw new Error("Failed to purchase lead")
-      }
-
-      // Refresh user profile to get updated coins and purchased leads
-      const updatedProfile = await fetchUserProfile(user.id)
-      if (updatedProfile) {
-        setUser(updatedProfile)
-      }
-
-      toast.success("Lead zakupiony pomyślnie", {
-        description: "Możesz teraz zobaczyć szczegóły w zakładce Zakupione Leady",
-      })
-
-      return true
-    } catch (error) {
-      console.error("Failed to purchase lead:", error)
-      toast.error("Wystąpił błąd podczas zakupu leada")
-      return false
-    } finally {
-      setLoading(false)
-    }
+  // Check if user has enough coins
+  if (user.coins < lead.price) {
+    toast.error("Niewystarczająca liczba monet", {
+      description: "Doładuj swoje konto, aby kupić ten lead",
+    });
+    return false;
   }
 
+  setLoading(true);
+  try {
+    const result = await purchaseLeadApi(lead.id, user.id, lead.price);
+
+    if (!result.success) {
+      throw new Error("Failed to purchase lead");
+    }
+
+    // Define updatedLead with the correct type
+    const updatedLead: Lead = {
+      ...lead,
+      order_number: result.order_number || `ORD-${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      status: "sold" // Mark the lead as sold
+    };
+    
+    // Now use updatedLead in the setUser function
+    setUser((prevUser: UserProfile | null): UserProfile | null => {
+      if (!prevUser) return null;
+      
+      return {
+        ...prevUser,
+        coins: prevUser.coins - lead.price,
+        purchasedLeads: [updatedLead, ...(prevUser.purchasedLeads || [])]
+      };
+    });
+
+    // Force refresh purchased leads from the server
+    await refreshPurchasedLeads();
+    
+    // Force router refresh to update the UI
+    router.refresh();
+
+    toast.success("Lead zakupiony pomyślnie", {
+      description: "Możesz teraz zobaczyć szczegóły w zakładce Zakupione Leady",
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Failed to purchase lead:", error);
+    toast.error("Wystąpił błąd podczas zakupu leada");
+    return false;
+  } finally {
+    setLoading(false);
+  }
+};
+
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading, purchaseLead }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      login, 
+      register, 
+      logout, 
+      loading, 
+      purchaseLead,
+      updateUser,
+      refreshPurchasedLeads
+    }}>
       {children}
     </AuthContext.Provider>
   )
@@ -268,4 +293,3 @@ export function useAuth() {
   }
   return context
 }
-

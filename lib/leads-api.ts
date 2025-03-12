@@ -57,17 +57,17 @@ export async function fetchPurchasedLeads(userId: string): Promise<Lead[]> {
     const result: Lead[] = []
 
     for (const purchase of data) {
-        if (purchase.lead) {
-          // Handle the case where lead is an array
-          const leadData = Array.isArray(purchase.lead) ? purchase.lead[0] : purchase.lead;
-          
-          result.push({
-            ...leadData,
-            order_number: purchase.order_number,
-            date: new Date(purchase.created_at).toISOString().split("T")[0],
-          })
-        }
+      if (purchase.lead) {
+        // Handle the case where lead is an array
+        const leadData = Array.isArray(purchase.lead) ? purchase.lead[0] : purchase.lead;
+        
+        result.push({
+          ...leadData,
+          order_number: purchase.order_number,
+          date: new Date(purchase.created_at).toISOString().split("T")[0],
+        })
       }
+    }
 
     return result
   } catch (error) {
@@ -183,4 +183,3 @@ export async function purchaseLead(
     return { success: false }
   }
 }
-
